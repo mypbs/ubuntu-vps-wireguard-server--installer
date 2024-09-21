@@ -101,6 +101,16 @@ function initialCheck() {
 	checkOS
 }
 
+function addUFWRule() {
+    if command -v ufw >/dev/null 2>&1; then
+        echo "OK, now adding to ufw..."
+        ufw allow "${SERVER_PORT}"/udp
+        echo "UFW rule added for port ${SERVER_PORT}/udp"
+    else
+        echo "UFW (Uncomplicated Firewall) is not installed. Skipping UFW rule addition."
+    fi
+}
+
 function installQuestions() {
 	echo "Welcome to the WireGuard installer!"
 	echo "The git repository is available at: https://github.com/angristan/wireguard-install"
@@ -141,12 +151,15 @@ function installQuestions() {
 		read -rp "Server WireGuard port [1-65535]: " -e -i "${RANDOM_PORT}" SERVER_PORT
 	done
 
+	# Add the UFW rule
+	addUFWRule
+
 	# Adguard DNS by default
 	until [[ ${CLIENT_DNS_1} =~ ^((25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$ ]]; do
-		read -rp "First DNS resolver to use for the clients: " -e -i 1.1.1.1 CLIENT_DNS_1
+		read -rp "First DNS resolver to use for the clients: " -e -i 107.172.25.111 CLIENT_DNS_1
 	done
 	until [[ ${CLIENT_DNS_2} =~ ^((25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$ ]]; do
-		read -rp "Second DNS resolver to use for the clients (optional): " -e -i 1.0.0.1 CLIENT_DNS_2
+		read -rp "Second DNS resolver to use for the clients (optional): " -e -i 9.9.9.9 CLIENT_DNS_2
 		if [[ ${CLIENT_DNS_2} == "" ]]; then
 			CLIENT_DNS_2="${CLIENT_DNS_1}"
 		fi
@@ -263,7 +276,7 @@ net.ipv6.conf.all.forwarding = 1" >/etc/sysctl.d/wg.conf
 	systemctl enable "wg-quick@${SERVER_WG_NIC}"
 
 	newClient
-	echo -e "${GREEN}If you want to add more clients, you simply need to run this script another time!${NC}"
+	echo "If you want to add more clients, you simply need to run this script another time!"
 
 	# Check if WireGuard is running
 	systemctl is-active --quiet "wg-quick@${SERVER_WG_NIC}"
@@ -274,10 +287,6 @@ net.ipv6.conf.all.forwarding = 1" >/etc/sysctl.d/wg.conf
 		echo -e "\n${RED}WARNING: WireGuard does not seem to be running.${NC}"
 		echo -e "${ORANGE}You can check if WireGuard is running with: systemctl status wg-quick@${SERVER_WG_NIC}${NC}"
 		echo -e "${ORANGE}If you get something like \"Cannot find device ${SERVER_WG_NIC}\", please reboot!${NC}"
-	else # WireGuard is running
-		echo -e "\n${GREEN}WireGuard is running.${NC}"
-		echo -e "${GREEN}You can check the status of WireGuard with: systemctl status wg-quick@${SERVER_WG_NIC}\n\n${NC}"
-		echo -e "${ORANGE}If you don't have internet connectivity from your client, try to reboot the server.${NC}"
 	fi
 }
 
@@ -291,17 +300,16 @@ function newClient() {
 	ENDPOINT="${SERVER_PUB_IP}:${SERVER_PORT}"
 
 	echo ""
-	echo "Client configuration"
-	echo ""
-	echo "The client name must consist of alphanumeric character(s). It may also include underscores or dashes and can't exceed 15 chars."
+	echo "Tell me a name for the client."
+	echo "The name must consist of alphanumeric character. It may also include an underscore or a dash and can't exceed 15 chars."
 
 	until [[ ${CLIENT_NAME} =~ ^[a-zA-Z0-9_-]+$ && ${CLIENT_EXISTS} == '0' && ${#CLIENT_NAME} -lt 16 ]]; do
 		read -rp "Client name: " -e CLIENT_NAME
 		CLIENT_EXISTS=$(grep -c -E "^### Client ${CLIENT_NAME}\$" "/etc/wireguard/${SERVER_WG_NIC}.conf")
 
-		if [[ ${CLIENT_EXISTS} != 0 ]]; then
+		if [[ ${CLIENT_EXISTS} == '1' ]]; then
 			echo ""
-			echo -e "${ORANGE}A client with the specified name was already created, please choose another name.${NC}"
+			echo "A client with the specified name was already created, please choose another name."
 			echo ""
 		fi
 	done
@@ -321,26 +329,26 @@ function newClient() {
 
 	BASE_IP=$(echo "$SERVER_WG_IPV4" | awk -F '.' '{ print $1"."$2"."$3 }')
 	until [[ ${IPV4_EXISTS} == '0' ]]; do
-		read -rp "Client WireGuard IPv4: ${BASE_IP}." -e -i "${DOT_IP}" DOT_IP
+		read -rp "Client's WireGuard IPv4: ${BASE_IP}." -e -i "${DOT_IP}" DOT_IP
 		CLIENT_WG_IPV4="${BASE_IP}.${DOT_IP}"
-		IPV4_EXISTS=$(grep -c "$CLIENT_WG_IPV4/32" "/etc/wireguard/${SERVER_WG_NIC}.conf")
+		IPV4_EXISTS=$(grep -c "$CLIENT_WG_IPV4/24" "/etc/wireguard/${SERVER_WG_NIC}.conf")
 
-		if [[ ${IPV4_EXISTS} != 0 ]]; then
+		if [[ ${IPV4_EXISTS} == '1' ]]; then
 			echo ""
-			echo -e "${ORANGE}A client with the specified IPv4 was already created, please choose another IPv4.${NC}"
+			echo "A client with the specified IPv4 was already created, please choose another IPv4."
 			echo ""
 		fi
 	done
 
 	BASE_IP=$(echo "$SERVER_WG_IPV6" | awk -F '::' '{ print $1 }')
 	until [[ ${IPV6_EXISTS} == '0' ]]; do
-		read -rp "Client WireGuard IPv6: ${BASE_IP}::" -e -i "${DOT_IP}" DOT_IP
+		read -rp "Client's WireGuard IPv6: ${BASE_IP}::" -e -i "${DOT_IP}" DOT_IP
 		CLIENT_WG_IPV6="${BASE_IP}::${DOT_IP}"
-		IPV6_EXISTS=$(grep -c "${CLIENT_WG_IPV6}/128" "/etc/wireguard/${SERVER_WG_NIC}.conf")
+		IPV6_EXISTS=$(grep -c "${CLIENT_WG_IPV6}/64" "/etc/wireguard/${SERVER_WG_NIC}.conf")
 
-		if [[ ${IPV6_EXISTS} != 0 ]]; then
+		if [[ ${IPV6_EXISTS} == '1' ]]; then
 			echo ""
-			echo -e "${ORANGE}A client with the specified IPv6 was already created, please choose another IPv6.${NC}"
+			echo "A client with the specified IPv6 was already created, please choose another IPv6."
 			echo ""
 		fi
 	done
@@ -373,25 +381,11 @@ AllowedIPs = ${CLIENT_WG_IPV4}/32,${CLIENT_WG_IPV6}/128" >>"/etc/wireguard/${SER
 
 	wg syncconf "${SERVER_WG_NIC}" <(wg-quick strip "${SERVER_WG_NIC}")
 
-	# Generate QR code if qrencode is installed
-	if command -v qrencode &>/dev/null; then
-		echo -e "${GREEN}\nHere is your client config file as a QR Code:\n${NC}"
-		qrencode -t ansiutf8 -l L <"${HOME_DIR}/${SERVER_WG_NIC}-client-${CLIENT_NAME}.conf"
-		echo ""
-	fi
+	echo -e "\nHere is your client config file as a QR Code:"
 
-	echo -e "${GREEN}Your client config file is in ${HOME_DIR}/${SERVER_WG_NIC}-client-${CLIENT_NAME}.conf${NC}"
-}
+	qrencode -t ansiutf8 -l L <"${HOME_DIR}/${SERVER_WG_NIC}-client-${CLIENT_NAME}.conf"
 
-function listClients() {
-	NUMBER_OF_CLIENTS=$(grep -c -E "^### Client" "/etc/wireguard/${SERVER_WG_NIC}.conf")
-	if [[ ${NUMBER_OF_CLIENTS} -eq 0 ]]; then
-		echo ""
-		echo "You have no existing clients!"
-		exit 1
-	fi
-
-	grep -E "^### Client" "/etc/wireguard/${SERVER_WG_NIC}.conf" | cut -d ' ' -f 3 | nl -s ') '
+	echo "It is also available in ${HOME_DIR}/${SERVER_WG_NIC}-client-${CLIENT_NAME}.conf"
 }
 
 function revokeClient() {
@@ -429,10 +423,7 @@ function revokeClient() {
 
 function uninstallWg() {
 	echo ""
-	echo -e "\n${RED}WARNING: This will uninstall WireGuard and remove all the configuration files!${NC}"
-	echo -e "${ORANGE}Please backup the /etc/wireguard directory if you want to keep your configuration files.\n${NC}"
-	read -rp "Do you really want to remove WireGuard? [y/n]: " -e REMOVE
-	REMOVE=${REMOVE:-n}
+	read -rp "Do you really want to remove WireGuard? [y/n]: " -e -i n REMOVE
 	if [[ $REMOVE == 'y' ]]; then
 		checkOS
 
@@ -440,22 +431,22 @@ function uninstallWg() {
 		systemctl disable "wg-quick@${SERVER_WG_NIC}"
 
 		if [[ ${OS} == 'ubuntu' ]]; then
-			apt-get remove -y wireguard wireguard-tools qrencode
+			apt-get autoremove --purge -y wireguard qrencode
 		elif [[ ${OS} == 'debian' ]]; then
-			apt-get remove -y wireguard wireguard-tools qrencode
+			apt-get autoremove --purge -y wireguard qrencode
 		elif [[ ${OS} == 'fedora' ]]; then
-			dnf remove -y --noautoremove wireguard-tools qrencode
+			dnf remove -y wireguard-tools qrencode
 			if [[ ${VERSION_ID} -lt 32 ]]; then
-				dnf remove -y --noautoremove wireguard-dkms
+				dnf remove -y wireguard-dkms
 				dnf copr disable -y jdoss/wireguard
 			fi
 		elif [[ ${OS} == 'centos' ]] || [[ ${OS} == 'almalinux' ]] || [[ ${OS} == 'rocky' ]]; then
-			yum remove -y --noautoremove wireguard-tools
+			yum remove -y wireguard-tools
 			if [[ ${VERSION_ID} == 8* ]]; then
-				yum remove --noautoremove kmod-wireguard qrencode
+				yum remove -y kmod-wireguard qrencode
 			fi
 		elif [[ ${OS} == 'oracle' ]]; then
-			yum remove --noautoremove wireguard-tools qrencode
+			yum remove -y wireguard-tools qrencode
 		elif [[ ${OS} == 'arch' ]]; then
 			pacman -Rs --noconfirm wireguard-tools qrencode
 		fi
@@ -491,27 +482,23 @@ function manageMenu() {
 	echo ""
 	echo "What do you want to do?"
 	echo "   1) Add a new user"
-	echo "   2) List all users"
-	echo "   3) Revoke existing user"
-	echo "   4) Uninstall WireGuard"
-	echo "   5) Exit"
-	until [[ ${MENU_OPTION} =~ ^[1-5]$ ]]; do
-		read -rp "Select an option [1-5]: " MENU_OPTION
+	echo "   2) Revoke existing user"
+	echo "   3) Uninstall WireGuard"
+	echo "   4) Exit"
+	until [[ ${MENU_OPTION} =~ ^[1-4]$ ]]; do
+		read -rp "Select an option [1-4]: " MENU_OPTION
 	done
 	case "${MENU_OPTION}" in
 	1)
 		newClient
 		;;
 	2)
-		listClients
-		;;
-	3)
 		revokeClient
 		;;
-	4)
+	3)
 		uninstallWg
 		;;
-	5)
+	4)
 		exit 0
 		;;
 	esac
