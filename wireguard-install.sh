@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Secure WireGuard server installer
-# https://github.com/angristan/wireguard-install
+# ORGINGAL FILE CAN BE FOUND HERE -- https://github.com/angristan/wireguard-install
 
 RED='\033[0;31m'
 ORANGE='\033[0;33m'
@@ -100,7 +100,7 @@ function initialCheck() {
 	checkVirt
 	checkOS
 }
-
+#the orginal script made you hand edit UFW roules to open up the port selected for Wireguard, my changes will automatically update UFW RULES.
 function addUFWRule() {
     if command -v ufw >/dev/null 2>&1; then
         echo "OK, now adding to ufw..."
@@ -155,8 +155,9 @@ function installQuestions() {
 	addUFWRule
 
 	# Adguard DNS by default
+	#You can use your own DNS selections here -- for example I run a PiHole etc, so replace your DNS IP with your favorites so you don't have to type in all the time....
 	until [[ ${CLIENT_DNS_1} =~ ^((25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$ ]]; do
-		read -rp "First DNS resolver to use for the clients: " -e -i 107.172.25.111 CLIENT_DNS_1
+		read -rp "First DNS resolver to use for the clients: " -e -i 1.1.1.1 CLIENT_DNS_1
 	done
 	until [[ ${CLIENT_DNS_2} =~ ^((25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$ ]]; do
 		read -rp "Second DNS resolver to use for the clients (optional): " -e -i 9.9.9.9 CLIENT_DNS_2
