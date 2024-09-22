@@ -517,7 +517,7 @@ function manageMenu() {
 		exit 0
 		;;
 	esac
-
+}
 # Check for root, virt, OS...
 initialCheck
 
